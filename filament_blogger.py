@@ -4,6 +4,7 @@ import requests
 import time
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from google.auth.transport.requests import Request
 
 CACHE_FILE = "posted_cache.txt"
 
@@ -40,6 +41,7 @@ def fetch_rakuten_item():
         "applicationId": app_id,
         "accessKey": access_key,
         "keyword": selected_keyword,
+        "NGKeyword": "乾燥機 ドライヤー ケース ボックス 収納 減速機 3Dプリンター本体",
         "format": "json",
         "hits": 30
     }
@@ -77,7 +79,7 @@ def generate_article_with_llm(item):
         if small_images:
             image_url = small_images[0]
 
-    # Google AnalyticsトラッキングコードをLLMのプロンプトにも確実に組み込む
+    # Google Analytics計測ID（G-NFPP76LS9J）を含む計測コード
     ga_tag = """<!-- Global site tag (gtag.js) - Google Analytics -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-NFPP76LS9J"></script>
 <script>
@@ -93,11 +95,11 @@ def generate_article_with_llm(item):
 【商品画像URL】: {image_url}
 【アフィリエイトURL】: {url}
 
-以下の要件を厳格に遵守してください：
+以下の要件を【厳格】に遵守してください：
 1. 出力はブログの本文となるHTMLコードのみとし、余計な説明、挨拶、前置きや後書き（例：「以下が記事です」「```html」のようなマークダウンブロック）は絶対に含めず、純粋なHTML文字列のみを出力してください。
-2. 記事の最上部（ヘッダー部分）に、以下のGoogle Analytics計測コードを必ずそのまま配置してください：
+2. 【最優先・強制】記事の最上部（ヘッダー部分）に、以下のGoogle Analytics計測コード（ID: G-NFPP76LS9J）を必ず【完全な形式】でそのまま挿入してください：
 {ga_tag}
-3. アイキャッチ画像として、商品画像URL（{image_url}）を直接<img>タグのsrc属性に指定し、Google Analyticsコードの直下に配置してください。
+3. アイキャッチ画像として、商品画像URL（{image_url}）を直接<img>タグのsrc属性に指定し、Google Analyticsコードの直後に配置してください。
 4. 記事構成：
    - キャッチーな見出し（<h2> または <h3> タグを使用）
    - 商品の特性（PLA/PETG/ABS/TPU/シルク等の素材、色、太さ）の簡潔な要約（客観的で魅力が伝わる文章）
@@ -107,7 +109,7 @@ def generate_article_with_llm(item):
    - 最後に装飾されたアフィリエイトリンクのボタン（<a>タグでスタイルし、新しいタブで開く target="_blank" rel="noopener noreferrer" を指定。オレンジ等のボタンデザインになるようインラインスタイルを施すこと。例：background-color: #ff6600; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;）
 """
 
-    system_content = "あなたは3Dプリンターのフィラメントおよびカスタムパーツ専門の技術派コレクター兼紹介ブロガーです。指示された仕様に完全に従い、前置きやHTMLタグブロックのマークダウン表現などを含めない純粋なHTML本文のみを出力します。"
+    system_content = "あなたは3Dプリンターのフィラメントおよびカスタムパーツ専門の技術派コレクター兼紹介ブロガーです。指示された仕様に完全に従い、Google Analytics計測タグを最上部に埋め込み、前置きやHTMLタグブロックのマークダウン表現などを含めない純粋なHTML本文のみを出力します。"
 
     # 1. GitHub Models API (GITHUB_TOKENを使用) を最優先
     github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
@@ -173,19 +175,47 @@ def generate_article_with_llm(item):
     raise RuntimeError("All LLM generation attempts failed.")
 
 def post_to_blogger(title, content):
+    refresh_token = os.environ.get("BLOGGER_REFRESH_TOKEN")
+    client_id = os.environ.get("BLOGGER_CLIENT_ID")
+    client_secret = os.environ.get("BLOGGER_CLIENT_SECRET")
+    blog_id = os.environ.get("BLOGGER_BLOG_ID")
+
+    # 環境変数の検証
+    missing_vars = []
+    if not refresh_token: missing_vars.append("BLOGGER_REFRESH_TOKEN")
+    if not client_id: missing_vars.append("BLOGGER_CLIENT_ID")
+    if not client_secret: missing_vars.append("BLOGGER_CLIENT_SECRET")
+    if not blog_id: missing_vars.append("BLOGGER_BLOG_ID")
+
+    if missing_vars:
+        raise ValueError(f"Missing required Blogger API variables: {', '.join(missing_vars)}")
+
+    print("Building Blogger API Credentials...")
     creds = Credentials(
         token=None,
-        refresh_token=os.environ["BLOGGER_REFRESH_TOKEN"],
-        client_id=os.environ["BLOGGER_CLIENT_ID"],
-        client_secret=os.environ["BLOGGER_CLIENT_SECRET"],
+        refresh_token=refresh_token,
+        client_id=client_id,
+        client_secret=client_secret,
         token_uri="https://oauth2.googleapis.com/token",
     )
-    service = build("blogger", "v3", credentials=creds)
     
-    blog_id = os.environ["BLOGGER_BLOG_ID"]
+    # トークンのリフレッシュによる明確なエラー検知
+    try:
+        print("Verifying and refreshing Blogger API OAuth credentials...")
+        creds.refresh(Request())
+    except Exception as auth_err:
+        print("\n=== Blogger API Authentication Verification Failed ===")
+        print("Please check your BLOGGER_REFRESH_TOKEN, BLOGGER_CLIENT_ID, and BLOGGER_CLIENT_SECRET.")
+        print("Ensure they are correctly configured in GitHub Secrets and have not been revoked or expired.")
+        print(f"Original OAuth Error Detail: {auth_err}")
+        print("====================================================\n")
+        raise auth_err
+
+    service = build("blogger", "v3", credentials=creds)
     
     # 二重の安全策：生成されたコンテンツに Google Analytics 計測 ID が入っていなければ、先頭に強制挿入する
     if "G-NFPP76LS9J" not in content:
+        print("Warning: Google Analytics ID (G-NFPP76LS9J) not found in LLM content. Injecting GA tag automatically.")
         ga_tag = """<!-- Global site tag (gtag.js) - Google Analytics -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-NFPP76LS9J"></script>
 <script>
