@@ -2,9 +2,11 @@ import os
 import random
 import requests
 import time
+import sys
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 
 CACHE_FILE = "posted_cache.txt"
 
@@ -99,7 +101,7 @@ def generate_article_with_llm(item):
 1. 出力はブログの本文となるHTMLコードのみとし、余計な説明、挨拶、前置きや後書き（例：「以下が記事です」「```html」のようなマークダウンブロック）は絶対に含めず、純粋なHTML文字列のみを出力してください。
 2. 【最優先・強制】記事の最上部（ヘッダー部分）に、以下のGoogle Analytics計測コード（ID: G-NFPP76LS9J）を必ず【完全な形式】でそのまま挿入してください：
 {ga_tag}
-3. アイキャッチ画像として、商品画像URL（{image_url}）を直接<img>タグのsrc属性に指定し、Google Analyticsコードの直後に配置してください。
+3. アイキャッチ画像として、商品画像URL（{image_url}）を直接<img>タグのsrc属性に指定し、Google Analyticsコードの直下に配置してください。
 4. 記事構成：
    - キャッチーな見出し（<h2> または <h3> タグを使用）
    - 商品の特性（PLA/PETG/ABS/TPU/シルク等の素材、色、太さ）の簡潔な要約（客観的で魅力が伝わる文章）
@@ -174,11 +176,33 @@ def generate_article_with_llm(item):
 
     raise RuntimeError("All LLM generation attempts failed.")
 
+def print_env_debug(name, value):
+    if not value:
+        print(f"[DEBUG-AUTH] {name} is NOT set or is empty.")
+        return
+    val_str = str(value)
+    length = len(val_str)
+    start_chars = val_str[:3] if length >= 3 else val_str
+    end_chars = val_str[-3:] if length >= 3 else val_str
+    
+    # 改行やスペースなどの見えない文字がないか確認できるようにエスケープ表現に変換
+    repr_start = repr(start_chars)
+    repr_end = repr(end_chars)
+    
+    print(f"[DEBUG-AUTH] {name}: length={length}, start={repr_start}, end={repr_end}")
+
 def post_to_blogger(title, content):
     refresh_token = os.environ.get("BLOGGER_REFRESH_TOKEN")
     client_id = os.environ.get("BLOGGER_CLIENT_ID")
     client_secret = os.environ.get("BLOGGER_CLIENT_SECRET")
     blog_id = os.environ.get("BLOGGER_BLOG_ID")
+
+    print("=== Environment Variables Debugging ===")
+    print_env_debug("BLOGGER_REFRESH_TOKEN", refresh_token)
+    print_env_debug("BLOGGER_CLIENT_ID", client_id)
+    print_env_debug("BLOGGER_CLIENT_SECRET", client_secret)
+    print_env_debug("BLOGGER_BLOG_ID", blog_id)
+    print("=======================================")
 
     # 環境変数の検証
     missing_vars = []
@@ -193,22 +217,35 @@ def post_to_blogger(title, content):
     print("Building Blogger API Credentials...")
     creds = Credentials(
         token=None,
-        refresh_token=refresh_token,
-        client_id=client_id,
-        client_secret=client_secret,
+        refresh_token=refresh_token.strip() if refresh_token else None,
+        client_id=client_id.strip() if client_id else None,
+        client_secret=client_secret.strip() if client_secret else None,
         token_uri="https://oauth2.googleapis.com/token",
     )
     
-    # トークンのリフレッシュによる明確なエラー検知
+    # トークンのリフレッシュによる明確なエラー検知と詳細ダンプ
     try:
         print("Verifying and refreshing Blogger API OAuth credentials...")
         creds.refresh(Request())
+    except RefreshError as refresh_err:
+        print("\n=== Blogger API OAuth Refresh Error (RefreshError) ===")
+        print(f"Error Type: {type(refresh_err)}")
+        print(f"Error Message: {refresh_err}")
+        # 生のサーバーからのエラーレスポンスを出力
+        if hasattr(refresh_err, 'args') and refresh_err.args:
+            print("OAuth Response Payload / Details:")
+            for arg in refresh_err.args:
+                print(f" - {arg}")
+        raise refresh_err
     except Exception as auth_err:
-        print("\n=== Blogger API Authentication Verification Failed ===")
-        print("Please check your BLOGGER_REFRESH_TOKEN, BLOGGER_CLIENT_ID, and BLOGGER_CLIENT_SECRET.")
-        print("Ensure they are correctly configured in GitHub Secrets and have not been revoked or expired.")
-        print(f"Original OAuth Error Detail: {auth_err}")
-        print("====================================================\n")
+        print("\n=== Blogger API OAuth General Failure ===")
+        print(f"Error Type: {type(auth_err)}")
+        print(f"Error Message: {auth_err}")
+        if hasattr(auth_err, 'response'):
+            try:
+                print(f"HTTP Response Body: {auth_err.response.text}")
+            except Exception:
+                pass
         raise auth_err
 
     service = build("blogger", "v3", credentials=creds)
