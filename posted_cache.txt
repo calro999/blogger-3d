@@ -8,3 +8,4 @@ biccamera:13957138
 ayard:10002600
 best-plice:10057616
 jindi:10000010
+jindi:10000044
