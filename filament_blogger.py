@@ -4,6 +4,7 @@ import requests
 import time
 import sys
 import base64
+import json
 import tempfile
 from playwright.sync_api import sync_playwright
 
@@ -180,6 +181,12 @@ def post_to_blogger(title, content):
     if not session_b64:
         raise ValueError("BLOGGER_SESSION_B64 is not set in environment variables.")
     
+    try:
+        decoded_str = base64.b64decode(session_b64).decode('utf-8')
+        json.loads(decoded_str) # JSONとして正しいか検証
+    except Exception as e:
+        raise ValueError(f"BLOGGER_SESSION_B64 のデコードに失敗しました。正しいBase64文字列が設定されているか確認してください。エラー詳細: {e}")
+
     blog_id = os.environ.get("BLOGGER_BLOG_ID")
     if not blog_id:
         raise ValueError("BLOGGER_BLOG_ID is not set in environment variables.")
