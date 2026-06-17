@@ -3,10 +3,10 @@ import random
 import requests
 import time
 import sys
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from google.auth.transport.requests import Request
-from google.auth.exceptions import RefreshError
+import base64
+import tempfile
+from playwright.sync_api import sync_playwright
+from playwright_stealth import stealth_sync
 
 CACHE_FILE = "posted_cache.txt"
 
@@ -176,80 +176,15 @@ def generate_article_with_llm(item):
 
     raise RuntimeError("All LLM generation attempts failed.")
 
-def print_env_debug(name, value):
-    if not value:
-        print(f"[DEBUG-AUTH] {name} is NOT set or is empty.")
-        return
-    val_str = str(value)
-    length = len(val_str)
-    start_chars = val_str[:3] if length >= 3 else val_str
-    end_chars = val_str[-3:] if length >= 3 else val_str
-    
-    # 改行やスペースなどの見えない文字がないか確認できるようにエスケープ表現に変換
-    repr_start = repr(start_chars)
-    repr_end = repr(end_chars)
-    
-    print(f"[DEBUG-AUTH] {name}: length={length}, start={repr_start}, end={repr_end}")
-
 def post_to_blogger(title, content):
-    refresh_token = os.environ.get("BLOGGER_REFRESH_TOKEN")
-    client_id = os.environ.get("BLOGGER_CLIENT_ID")
-    client_secret = os.environ.get("BLOGGER_CLIENT_SECRET")
+    session_b64 = os.environ.get("BLOGGER_SESSION_B64")
+    if not session_b64:
+        raise ValueError("BLOGGER_SESSION_B64 is not set in environment variables.")
+    
     blog_id = os.environ.get("BLOGGER_BLOG_ID")
+    if not blog_id:
+        raise ValueError("BLOGGER_BLOG_ID is not set in environment variables.")
 
-    print("=== Environment Variables Debugging ===")
-    print_env_debug("BLOGGER_REFRESH_TOKEN", refresh_token)
-    print_env_debug("BLOGGER_CLIENT_ID", client_id)
-    print_env_debug("BLOGGER_CLIENT_SECRET", client_secret)
-    print_env_debug("BLOGGER_BLOG_ID", blog_id)
-    print("=======================================")
-
-    # 環境変数の検証
-    missing_vars = []
-    if not refresh_token: missing_vars.append("BLOGGER_REFRESH_TOKEN")
-    if not client_id: missing_vars.append("BLOGGER_CLIENT_ID")
-    if not client_secret: missing_vars.append("BLOGGER_CLIENT_SECRET")
-    if not blog_id: missing_vars.append("BLOGGER_BLOG_ID")
-
-    if missing_vars:
-        raise ValueError(f"Missing required Blogger API variables: {', '.join(missing_vars)}")
-
-    print("Building Blogger API Credentials...")
-    creds = Credentials(
-        token=None,
-        refresh_token=refresh_token.strip() if refresh_token else None,
-        client_id=client_id.strip() if client_id else None,
-        client_secret=client_secret.strip() if client_secret else None,
-        token_uri="https://oauth2.googleapis.com/token",
-    )
-    
-    # トークンのリフレッシュによる明確なエラー検知と詳細ダンプ
-    try:
-        print("Verifying and refreshing Blogger API OAuth credentials...")
-        creds.refresh(Request())
-    except RefreshError as refresh_err:
-        print("\n=== Blogger API OAuth Refresh Error (RefreshError) ===")
-        print(f"Error Type: {type(refresh_err)}")
-        print(f"Error Message: {refresh_err}")
-        # 生のサーバーからのエラーレスポンスを出力
-        if hasattr(refresh_err, 'args') and refresh_err.args:
-            print("OAuth Response Payload / Details:")
-            for arg in refresh_err.args:
-                print(f" - {arg}")
-        raise refresh_err
-    except Exception as auth_err:
-        print("\n=== Blogger API OAuth General Failure ===")
-        print(f"Error Type: {type(auth_err)}")
-        print(f"Error Message: {auth_err}")
-        if hasattr(auth_err, 'response'):
-            try:
-                print(f"HTTP Response Body: {auth_err.response.text}")
-            except Exception:
-                pass
-        raise auth_err
-
-    service = build("blogger", "v3", credentials=creds)
-    
     # 二重の安全策：生成されたコンテンツに Google Analytics 計測 ID が入っていなければ、先頭に強制挿入する
     if "G-NFPP76LS9J" not in content:
         print("Warning: Google Analytics ID (G-NFPP76LS9J) not found in LLM content. Injecting GA tag automatically.")
@@ -264,14 +199,76 @@ def post_to_blogger(title, content):
 """
         content = ga_tag + "\n" + content
 
-    body = {
-        "title": title,
-        "content": content
-    }
-    
-    print(f"Posting to Blogger (Blog ID: {blog_id})...")
-    post = service.posts().insert(blogId=blog_id, body=body).execute()
-    print(f"Successfully posted! Post URL: {post.get('url')}")
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".json") as temp_file:
+        temp_file.write(base64.b64decode(session_b64))
+        session_file_path = temp_file.name
+
+    print(f"Posting to Blogger (Blog ID: {blog_id}) using Playwright...")
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--disable-blink-features=AutomationControlled"]
+            )
+            context = browser.new_context(
+                storage_state=session_file_path,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = context.new_page()
+            stealth_sync(page)
+
+            page.goto(f"https://www.blogger.com/blog/posts/{blog_id}", wait_until="networkidle")
+            time.sleep(random.uniform(2.0, 4.0))
+
+            page.goto(f"https://www.blogger.com/blog/post/edit/{blog_id}/new", wait_until="networkidle")
+            time.sleep(random.uniform(2.0, 4.0))
+
+            title_input = page.locator('input[aria-label="Title"], input[aria-label="タイトル"]').first
+            title_input.wait_for(state="visible", timeout=10000)
+            title_input.click()
+            time.sleep(random.uniform(0.5, 1.5))
+            title_input.fill(title)
+            time.sleep(random.uniform(1.0, 2.0))
+
+            view_switch = page.locator('[aria-label="View mode"], [aria-label="表示モード"]').first
+            if view_switch.count() > 0:
+                view_switch.click()
+                time.sleep(random.uniform(0.5, 1.0))
+                html_view_btn = page.locator('[aria-label="HTML view"], [aria-label="HTML ビュー"]').first
+                if html_view_btn.count() > 0:
+                    html_view_btn.click()
+                    time.sleep(random.uniform(1.0, 2.0))
+
+            textarea = page.locator('textarea[aria-label="Body"], textarea[aria-label="本文"], .html-textarea').first
+            if textarea.count() > 0:
+                textarea.click()
+                textarea.fill(content)
+            else:
+                editor = page.locator('.editable, [contenteditable="true"]').first
+                editor.click()
+                page.evaluate('''(content) => {
+                    document.querySelector('[contenteditable="true"]').innerHTML = content;
+                }''', content)
+                page.keyboard.press('Space')
+
+            time.sleep(random.uniform(2.0, 3.0))
+
+            publish_btn = page.locator('[aria-label="Publish"], [aria-label="公開"]').first
+            publish_btn.wait_for(state="visible", timeout=10000)
+            publish_btn.click()
+            time.sleep(random.uniform(1.0, 2.0))
+
+            confirm_btn = page.locator('[aria-label="Confirm"], [aria-label="確認"]').first
+            if confirm_btn.count() > 0:
+                confirm_btn.click()
+                time.sleep(random.uniform(2.0, 4.0))
+
+            print("Successfully posted using Playwright!")
+
+    finally:
+        if os.path.exists(session_file_path):
+            os.remove(session_file_path)
 
 def main():
     try:
