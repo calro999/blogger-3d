@@ -14,3 +14,4 @@ almeria-secondstore:10733947
 jindi:10000035
 makana--:10527473
 jindi:10000044
+makana--:10427200
