@@ -107,3 +107,4 @@ slife:10988561
 auc-ufigure:10000550
 best-plice:10068547
 utvillage1212:10008258
+kai-shop:10036181
