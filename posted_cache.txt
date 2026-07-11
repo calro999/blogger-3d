@@ -137,3 +137,4 @@ ess-lifestyle:10009173
 halloc:10237115
 uxcelljapan:10605078
 clickworks:10098903
+sotenco:11225800
