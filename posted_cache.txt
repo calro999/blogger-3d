@@ -202,3 +202,4 @@ makana--:10542261
 makana--:10527432
 morro:10013763
 akindo:10192803
+daily-store:10183995
