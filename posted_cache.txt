@@ -223,3 +223,4 @@ biccamera:14544095
 halloc:10237132
 goodlifeshopstore:10178712
 sunmarket-ago:10023689
+shattakomachi:10073411
