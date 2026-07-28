@@ -231,3 +231,4 @@ makana--:10527469
 konanonline:10228778
 whitehalca:10269238
 bariasu-online:10001893
+novolstore:10854596
