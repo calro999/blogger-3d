@@ -237,3 +237,4 @@ sotenco:12006484
 makana--:10527524
 kai-shop:10065758
 akindo:10192799
+akindo:10192798
