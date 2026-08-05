@@ -246,3 +246,4 @@ sunmarket-ago:10023687
 akindo:10192844
 biccamera:14544098
 astershop:10678756
+auc-risukai:10262030
