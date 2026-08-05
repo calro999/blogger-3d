@@ -42,33 +42,59 @@ def save_to_cache(item_code):
     with open(CACHE_FILE, "a", encoding="utf-8") as f:
         f.write(f"{item_code}\n")
 
+def get_rakuten_affiliate_url(item, affiliate_id):
+    aff_url = item.get("affiliateUrl")
+    if aff_url and "hb.afl.rakuten.co.jp" in aff_url:
+        return aff_url
+    
+    item_url = item.get("itemUrl") or ""
+    if not item_url:
+        return ""
+    
+    if affiliate_id:
+        import urllib.parse
+        encoded_item_url = urllib.parse.quote(item_url, safe='')
+        return f"https://hb.afl.rakuten.co.jp/hgc/{affiliate_id}/?pc={encoded_item_url}&m={encoded_item_url}"
+    
+    return item_url
+
+def sanitize_llm_output(content, valid_affiliate_url):
+    if not content:
+        return ""
+    import re
+    url_pattern = r'https?://[^\s"<>\'\)]+'
+    def replace_url(match):
+        found_url = match.group(0)
+        if "room.rakuten.co.jp" in found_url or "hb.afl.rakuten.co.jp" in found_url or ("rakuten.co.jp" in found_url and "affiliateId" in found_url):
+            return found_url
+        return valid_affiliate_url if valid_affiliate_url else "https://room.rakuten.co.jp/jack555/items"
+    
+    sanitized = re.sub(url_pattern, replace_url, content)
+    sanitized = sanitized.replace("Amazon", "楽天市場").replace("アマゾン", "楽天市場").replace("ヤフー", "楽天市場").replace("Yahoo!", "楽天市場")
+    return sanitized
+
 def fetch_rakuten_item():
     app_id = os.environ.get("RAKUTEN_APP_ID")
     access_key = os.environ.get("RAKUTEN_ACCESS_KEY")
+    affiliate_id = os.environ.get("RAKUTEN_AFFILIATE_ID")
     if not app_id or not access_key:
         raise ValueError("RAKUTEN_APP_ID and RAKUTEN_ACCESS_KEY must be set in environment variables.")
 
-    # 3Dプリンター・フィラメント特化のキーワードリスト
-    keywords = [
-        "eSUN フィラメント",
-        "SUNLU フィラメント",
-        "PolyMaker フィラメント",
-        "OVERTURE フィラメント",
-        "3Dプリンター ノズル 0.4mm",
-        "PEIビルドプレート"
-    ]
-    selected_keyword = random.choice(keywords)
-    print(f"Searching Rakuten for keyword: {selected_keyword}")
+    attributes = ["フィラメント", "3Dプリンター", "PLA", "PETG", "ABS", "パーツ"]
+    selected_attribute = random.choice(attributes)
+    keyword = f"3Dプリンター {selected_attribute}"
+    print(f"Searching Rakuten for keyword: {keyword}")
 
     url = "https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20260401"
     params = {
         "applicationId": app_id,
         "accessKey": access_key,
-        "keyword": selected_keyword,
-        "NGKeyword": "乾燥機 ドライヤー ケース ボックス 収納 減速機 3Dプリンター本体",
+        "keyword": keyword,
         "format": "json",
         "hits": 30
     }
+    if affiliate_id:
+        params["affiliateId"] = affiliate_id
 
     response = requests.get(url, params=params)
     if response.status_code != 200:
@@ -77,7 +103,7 @@ def fetch_rakuten_item():
     data = response.json()
     items = data.get("Items", [])
     if not items:
-        raise RuntimeError(f"No items found for keyword: {selected_keyword}")
+        raise RuntimeError(f"No items found for keyword: {keyword}")
 
     posted_cache = load_posted_cache()
     for item_wrapper in items:
@@ -89,11 +115,11 @@ def fetch_rakuten_item():
     raise RuntimeError("All fetched items have already been posted.")
 
 def generate_article_with_llm(item):
-    title = item.get("itemName")
-    price = item.get("itemPrice")
-    url = item.get("affiliateUrl") or item.get("itemUrl")
+    title = item.get("itemName", "")
+    price = item.get("itemPrice", "")
+    affiliate_id = os.environ.get("RAKUTEN_AFFILIATE_ID")
+    url = get_rakuten_affiliate_url(item, affiliate_id)
     
-    # 複数画像がある場合は最初の一枚、なければ空文字列
     image_url = ""
     medium_images = item.get("mediumImageUrls", [])
     if medium_images:
@@ -103,15 +129,7 @@ def generate_article_with_llm(item):
         if small_images:
             image_url = small_images[0]
 
-    # Google Analytics計測ID（G-NFPP76LS9J）を含む計測コード
-    ga_tag = """<!-- Global site tag (gtag.js) - Google Analytics -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-NFPP76LS9J"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  gtag('config', 'G-NFPP76LS9J');
-</script>"""
+    buy_button_html = f'<div style="text-align: center; margin: 20px 0;"><a href="{url}" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding: 14px 28px; background-color: #bf0000; color: #ffffff; font-weight: bold; font-size: 16px; border-radius: 8px; text-decoration: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">🛒 楽天市場で価格・在庫を見る</a></div>'
 
     prompt = f"""以下の楽天の商品情報を基にして、ブログ記事のタイトルとHTML本文を生成してください。
 【商品名】: {title}
@@ -129,96 +147,87 @@ def generate_article_with_llm(item):
 2. HTML本文の構成：
    - 記事全体を `<div class="premium-squishy-article">` と `</div>` で囲む
    - 商品の魅力的な説明（`<div class="premium-content-body">` と `</div>` で囲む）
-   - 極上の贅沢ポイント3選（`<ul class="premium-points-list">` と `<li>` タグを使用）
+   - おすすめ注目ポイント3選（`<ul class="premium-points-list">` と `<li>` タグを使用）
    - 商品の画像（`<img src="{image_url}" alt="{title}" style="max-width: 100%; height: auto;">`）
-   - 楽天ROOMへのリンク（`<br><a href="https://room.rakuten.co.jp/jack555/items" target="_blank">✅ 私の楽天ROOMはこちら</a>`）を必ず含めること
+   - 楽天市場への購入アフィリエイトボタン（必ず以下のHTMLを配置すること）:
+     {buy_button_html}
+   - 楽天ROOMへのリンク（`<br><a href="https://room.rakuten.co.jp/jack555/items" target="_blank">✅ 私の楽天ROOMはこちら</a>`）
+3. 【厳禁事項】: Amazon, Yahoo, 他社ECサイト, メーカー公式サイト等のURLや名称は絶対に含めないでください。商品リンクは提供したアフィリエイトURLのみを使用してください。
 """
 
-    system_content = "あなたは3Dプリンターのフィラメントおよびカスタムパーツ専門の技術派コレクター兼紹介ブロガーです。指示された仕様に完全に従い、Google Analytics計測タグを最上部に埋め込み、前置きやHTMLタグブロックのマークダウン表現などを含めない純粋なHTML本文のみを出力します。"
+    system_message = "あなたは3Dプリンター・フィラメント専門の紹介ブロガーです。指示された仕様に完全に従い、Amazon等の無関係な外部サイトリンクを一切含めない純粋なHTML本文を出力します。"
 
-    # 1. GitHub Models API (GITHUB_TOKENを使用) を最優先
+    # 1. GitHub Models API
     github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if github_token:
-        try:
-            print("Attempting to generate article with GitHub Models API...")
-            headers = {
-                "Authorization": f"Bearer {github_token}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": "gpt-4o-mini",
-                "messages": [
-                    {"role": "system", "content": system_content},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": 0.7
-            }
-            response = requests.post("https://models.inference.ai.azure.com/chat/completions", headers=headers, json=payload, timeout=30)
-            if response.status_code == 200:
-                result_text = response.json()["choices"][0]["message"]["content"].strip()
-                import json
-                try:
-                    # Markdownブロック等を取り除く
-                    if "```json" in result_text: result_text = result_text.split("```json", 1)[1]
-                    if "```" in result_text: result_text = result_text.split("```")[0]
-                    result_text = result_text.strip()
-                    parsed = json.loads(result_text)
-                    return parsed # 辞書を返す
-                except Exception as e:
-                    print("JSON Parse error:", e)
-                    return {"title": "【注目】" + title[:20] + "...", "html": result_text}
-                if "```html" in result:
-                    result = result.split("```html", 1)[1]
-                if "```" in result:
-                    result = result.split("```", 1)[0]
-                return result.strip()
-            else:
-                print(f"GitHub Models API returned status code: {response.status_code} - {response.text}")
-        except Exception as e:
-            print(f"GitHub Models API failed with exception: {e}")
-    else:
-        print("GITHUB_TOKEN / GH_TOKEN is not set in environment variables.")
-
-
-
-    
-    # 1.2 Groq API (GROQ_API_KEYを使用)
-    groq_key = os.environ.get("GROQ_API_KEY")
-    if groq_key:
-        for groq_model in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-8b-8192"]:
+        for model_name in ["gpt-4o-mini", "gpt-4o", "Phi-3.5-mini-instruct"]:
             try:
-                print(f"Attempting to generate article with Groq API ({groq_model})...")
-                headers = {
-                    "Authorization": f"Bearer {groq_key}",
-                    "Content-Type": "application/json"
-                }
+                headers = {"Authorization": f"Bearer {github_token}", "Content-Type": "application/json"}
                 payload = {
-                    "model": groq_model,
+                    "model": model_name,
                     "messages": [
-                        {"role": "system", "content": system_content},
+                        {"role": "system", "content": system_message},
                         {"role": "user", "content": prompt}
                     ],
                     "temperature": 0.7
                 }
-                response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=30)
-                if response.status_code == 200:
-                    result_text = response.json()["choices"][0]["message"]["content"].strip()
-                    import json
-                    try:
-                        if "```json" in result_text: result_text = result_text.split("```json", 1)[1]
-                        if "```" in result_text: result_text = result_text.split("```")[0]
-                        result_text = result_text.strip()
-                        parsed = json.loads(result_text)
-                        return parsed
-                    except Exception as e:
-                        print("Groq JSON Parse error:", e)
-                        return {"title": "【注目】" + title[:20] + "...", "html": result_text}
-                else:
-                    print(f"Groq API ({groq_model}) status: {response.status_code}")
+                res = requests.post("https://models.inference.ai.azure.com/chat/completions", headers=headers, json=payload, timeout=25)
+                if res.status_code == 200:
+                    text = res.json()["choices"][0]["message"]["content"].strip()
+                    if "```json" in text: text = text.split("```json", 1)[1].split("```")[0].strip()
+                    elif "```" in text: text = text.split("```", 1)[1].split("```")[0].strip()
+                    parsed = json.loads(text)
+                    parsed["html"] = sanitize_llm_output(parsed["html"], url)
+                    return parsed
             except Exception as e:
-                print(f"Groq API ({groq_model}) exception: {e}")
+                print(f"GitHub Models API ({model_name}) article error: {e}")
 
-    print("WARNING: All online LLM generation attempts failed or rate limited. Generating high-quality tailored fallback HTML.")
+    # 2. Gemini API
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if gemini_key:
+        for model_name in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+            try:
+                url_api = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
+                payload = {"contents": [{"parts": [{"text": f"{system_message}\n\n{prompt}"}]}]}
+                res = requests.post(url_api, json=payload, timeout=25)
+                if res.status_code == 200:
+                    text = res.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                    if "```json" in text: text = text.split("```json", 1)[1].split("```")[0].strip()
+                    elif "```" in text: text = text.split("```", 1)[1].split("```")[0].strip()
+                    parsed = json.loads(text)
+                    parsed["html"] = sanitize_llm_output(parsed["html"], url)
+                    return parsed
+            except Exception as e:
+                print(f"Gemini API ({model_name}) article error: {e}")
+
+    # 3. Groq API
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if groq_key:
+        for model_name in ["llama-3.3-70b-versatile", "llama3-8b-8192"]:
+            try:
+                headers = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
+                payload = {
+                    "model": model_name,
+                    "messages": [
+                        {"role": "system", "content": system_message},
+                        {"role": "user", "content": prompt}
+                    ]
+                }
+                res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=25)
+                if res.status_code == 200:
+                    text = res.json()["choices"][0]["message"]["content"].strip()
+                    if "```json" in text: text = text.split("```json", 1)[1].split("```")[0].strip()
+                    elif "```" in text: text = text.split("```", 1)[1].split("```")[0].strip()
+                    parsed = json.loads(text)
+                    parsed["html"] = sanitize_llm_output(parsed["html"], url)
+                    return parsed
+            except Exception as e:
+                print(f"Groq API ({model_name}) article error: {e}")
+
+    print("WARNING: All LLM generation attempts failed. Generating dynamic item-aware article.")
+    clean_title = title.replace("【", "").replace("】", "")[:35]
+    price_str = f"（価格: {price}円）" if price else ""
+    
     fallback_html = f"""<div class="premium-squishy-article">
     <div class="premium-content-body">
         <h2>【おすすめ】{title[:35]}</h2>
