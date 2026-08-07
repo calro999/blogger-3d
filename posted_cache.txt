@@ -254,3 +254,4 @@ ayard:10003179
 elegoo:10000021
 goodtimestore:10007136
 ideabike:10000569
+halloc:10530468
