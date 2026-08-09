@@ -259,3 +259,4 @@ horiku:10070698
 auc-towajapan0615:10000306
 emon-shop:10042689
 goodlifeshopstore:10172470
+elegoo:10000012
