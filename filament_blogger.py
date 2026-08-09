@@ -121,13 +121,20 @@ def generate_article_with_llm(item):
     url = get_rakuten_affiliate_url(item, affiliate_id)
     
     image_url = ""
-    medium_images = item.get("mediumImageUrls", [])
-    if medium_images:
-        image_url = medium_images[0]
-    else:
-        small_images = item.get("smallImageUrls", [])
-        if small_images:
-            image_url = small_images[0]
+    for key in ["mediumImageUrls", "smallImageUrls"]:
+        imgs = item.get(key, [])
+        if imgs and isinstance(imgs, list):
+            first = imgs[0]
+            if isinstance(first, dict):
+                url_candidate = first.get("imageUrl", "") or first.get("url", "")
+                if url_candidate:
+                    image_url = url_candidate
+                    break
+            elif isinstance(first, str):
+                image_url = first
+                break
+    if not image_url:
+        image_url = item.get("imageUrl", "")
 
     buy_button_html = f'<div style="text-align: center; margin: 20px 0;"><a href="{url}" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding: 14px 28px; background-color: #bf0000; color: #ffffff; font-weight: bold; font-size: 16px; border-radius: 8px; text-decoration: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">🛒 楽天市場で価格・在庫を見る</a></div>'
 
@@ -525,24 +532,23 @@ def generate_room_comment_with_llm(item):
     price = item.get("itemPrice") or item.get("price") or ""
     caption = item.get("itemCaption") or item.get("catchcopy") or ""
 
-    prompt = f"""以下の楽天の商品情報を基にして、楽天ROOM用の紹介コメント（400文字以内）を生成してください。
+    prompt = f"""以下の3Dプリンター・フィラメント関連商品情報を基にして、楽天ROOM用の魅力的な紹介コメント（400文字以内）を生成してください。
 【商品名】: {title}
 【価格】: {price}円
 【商品説明・特徴】: {caption[:200]}
 
 以下の要件を厳格に遵守してください：
-1. 口調・トーン：「これ気になってた！」「これかわいい！」「これ便利だよ！」といった親しみやすく共感できる会話調にすること。
+1. 口調・トーン：3Dプリンター愛好家・モノづくりユーザーに刺さる自然で信頼感のある語り口とし、「これかわいい！」「これ気になってた！」「これ便利だよ！」といった安易な定型表現は絶対に使用しないでください。プリント精度・発色・扱いやすさ等の具体的メリットを解説してください。
 2. 文字数：400文字以内（厳守。超えると投稿エラーになります）。
 3. 絵文字：5〜8個使用して華やかにすること。
-4. ハッシュタグ：3〜5個（商品のカテゴリや関連するもの）含め、末尾に「#楽天市場」を必ず含めること。
+4. ハッシュタグ：3〜5個（「#3Dプリンター #フィラメント #ものづくり」等、関連タグ）含め、末尾に「#楽天市場」を必ず含めること。
 5. URLや疑似リンク、プレースホルダー（「[リンクはこちら]」など）は絶対に含めないでください。
 6. 出力は紹介コメントのテキストのみとし、前置きやMarkdownの装飾コードブロック等は一切含めないでください。
 """
 
     system_message = (
-        "あなたは楽天ROOMでフォロワー急増中の人気インフルエンサーです。"
-        "「これ気になってた！」「これかわいい！」「これ便利だよ！」などの親しみやすい口調で、"
-        "商品の魅力を共感たっぷりに伝えてください。"
+        "あなたは3Dプリンター・モノづくり専門のインフルエンサーです。"
+        "定型文やテンプレート表現を排し、造形の品質向上やプリント作業の効率化につながる具体的かつ自然なオリジナル紹介文を作成してください。"
     )
 
     def clean_text(text):
@@ -652,23 +658,21 @@ def generate_room_comment_with_llm(item):
 
     print("WARNING: All LLM API calls failed. Generating dynamic item-aware comment.")
     clean_title = title.replace("【", "").replace("】", "").replace("！", "").replace("✨", "")[:45]
-    words = [w for w in clean_title.split() if len(w) > 1]
-    keyword = words[0] if words else "おすすめ"
 
     starters = [
-        f"これ気になってた！「{clean_title}」すごく良さそうで目をつけてました✨",
-        f"これかわいい！「{clean_title}」のデザインに一目惚れしちゃった💕",
-        f"これ便利だよ！「{clean_title}」は持っておくと日常で大活躍しそう👍",
-        f"これ気になってた！話題の「{clean_title}」を見つけて即チェック🎁",
-        f"これ便利だよ！生活のクオリティが上がりそうな「{clean_title}」✨"
+        f"造形クオリティアップにおすすめ！『{clean_title}』をピックアップ🛠️",
+        f"3Dプリンターユーザー必見！安定した出力と仕上がりの美しさが特徴の『{clean_title}』✨",
+        f"ものづくり・DIYが捗る注目アイテム！『{clean_title}』をチェック👍",
+        f"精度と耐久性を両立！『{clean_title}』の魅力をチェックしてみてください🎁",
+        f"コスパ抜群の3Dプリント関連ギア！『{clean_title}』をお気に入りに追加おすすめ✨"
     ]
     starter = random.choice(starters)
 
     bodies = [
-        "実用性抜群で見た目のセンスも最高のアイテム！自分用はもちろんギフトにもぴったりだね😊",
-        "使ってみた人の評価も高くて期待大！毎日の生活がもっと楽しくなりそう✨",
-        "細部までこだわりを感じる優秀アイテム。気になる人はぜひチェックしてみてね🛍️",
-        "このクオリティでこの価格は本当に魅力的！見つけたら早めのチェックがおすすめ👍"
+        "糸引きや積層痕が目立ちにくく、ブレのない安定したプリント精度を実現してくれる優秀なアイテム！😊",
+        "実用パーツの作成からモデル造形まで幅広く活躍。初心者から上級者まで満足のクオリティです✨",
+        "耐久性と発色にも優れ、作品の完成度を一気に引き上げてくれます！大満足の品質🛍️",
+        "在庫があるうちにチェックしておきたい注目のギア。ぜひ詳細を確認してみてください👍"
     ]
     body = random.choice(bodies)
 
