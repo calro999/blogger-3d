@@ -269,3 +269,4 @@ best-plice:10043833
 ohstore:10585410
 halloc:10237079
 mitumoto001:10000264
+elegoo:10000038
