@@ -281,3 +281,4 @@ goodtimestore:10007202
 auc-towajapan0615:10000307
 mitumoto001:10000263
 kai-shop:10008855
+beamtec:10025328
