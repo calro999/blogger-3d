@@ -285,3 +285,4 @@ beamtec:10025328
 halloc:10237080
 firstlove:10102221
 kikou-shop:10000350
+goodtimestore:10010070
