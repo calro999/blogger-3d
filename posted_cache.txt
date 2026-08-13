@@ -287,3 +287,4 @@ firstlove:10102221
 kikou-shop:10000350
 goodtimestore:10010070
 horiku:10070710
+beamtec:10021959
