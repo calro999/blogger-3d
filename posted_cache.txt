@@ -290,3 +290,4 @@ horiku:10070710
 beamtec:10021959
 select-labo:10000615
 e-connect:10532768
+halloc:10237096
