@@ -309,3 +309,4 @@ select-labo:10000621
 mitashop:10022565
 everydayshop:10342586
 komamono-honpo:10100393
+kikou-shop:10000642
