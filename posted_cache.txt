@@ -323,3 +323,4 @@ kgcshop2:10001512
 ideabike:10000568
 ayard:10002848
 rezake-su:10034407
+select-labo:10000265
