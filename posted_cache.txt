@@ -355,3 +355,4 @@ zmart-shop:10002177
 kikou-shop:10000357
 komamono-honpo:10100382
 beamtec:10021961
+trg-shop:10084538
