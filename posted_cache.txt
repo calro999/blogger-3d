@@ -359,3 +359,4 @@ trg-shop:10084538
 komamono-honpo:10100383
 everydayshop:10342585
 ram180:10002081
+beamtec:10027074
