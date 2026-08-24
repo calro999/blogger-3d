@@ -371,3 +371,4 @@ apple-tree-shop:10000204
 ideabike:10000471
 ideabike:10000477
 hanatomori:10076150
+akindo:10192801
