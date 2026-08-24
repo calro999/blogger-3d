@@ -373,3 +373,4 @@ ideabike:10000477
 hanatomori:10076150
 akindo:10192801
 mitashop:10028506
+rinstore:10000046
