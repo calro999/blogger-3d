@@ -164,7 +164,50 @@ def generate_article_with_llm(item):
 
     system_message = "あなたは3Dプリンター・フィラメント専門の紹介ブロガーです。指示された仕様に完全に従い、Amazon等の無関係な外部サイトリンクを一切含めない純粋なHTML本文を出力します。"
 
-    # 1. GitHub Models API
+    # 1. Gemini API（最優先）
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if gemini_key:
+        models = [
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.0-flash-lite",
+            "gemini-3.7-flash",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-3-flash",
+            "gemini-2.5-pro",
+            "gemini-3.1-pro"
+        ]
+        for model_name in models:
+            try:
+                url_api = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
+                payload = {
+                    "contents": [{"parts": [{"text": f"{system_message}\n\n{prompt}"}]}],
+                    "generationConfig": {"temperature": 0.8, "maxOutputTokens": 2048}
+                }
+                if any(v in model_name for v in ["2.5", "3.", "3-"]):
+                    payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
+                res = requests.post(url_api, json=payload, timeout=30)
+                if res.status_code == 200:
+                    data = res.json()
+                    candidate = data.get("candidates", [{}])[0]
+                    parts = candidate.get("content", {}).get("parts", [])
+                    text = "".join(p.get("text", "") for p in parts if p.get("text")).strip()
+                    if "```json" in text: text = text.split("```json", 1)[1].split("```")[0].strip()
+                    elif "```" in text: text = text.split("```", 1)[1].split("```")[0].strip()
+                    parsed = json.loads(text)
+                    parsed["html"] = sanitize_llm_output(parsed["html"], url)
+                    print(f"Successfully generated article via Gemini API ({model_name}).")
+                    return parsed
+                else:
+                    print(f"Gemini API ({model_name}) returned {res.status_code}: {res.text[:100]}")
+            except Exception as e:
+                print(f"Gemini API ({model_name}) article error: {e}")
+
+    # 2. GitHub Models API
     github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if github_token:
         for model_name in ["gpt-4o-mini", "gpt-4o", "Phi-3.5-mini-instruct"]:
@@ -188,24 +231,6 @@ def generate_article_with_llm(item):
                     return parsed
             except Exception as e:
                 print(f"GitHub Models API ({model_name}) article error: {e}")
-
-    # 2. Gemini API
-    gemini_key = os.environ.get("GEMINI_API_KEY")
-    if gemini_key:
-        for model_name in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
-            try:
-                url_api = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
-                payload = {"contents": [{"parts": [{"text": f"{system_message}\n\n{prompt}"}]}]}
-                res = requests.post(url_api, json=payload, timeout=25)
-                if res.status_code == 200:
-                    text = res.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                    if "```json" in text: text = text.split("```json", 1)[1].split("```")[0].strip()
-                    elif "```" in text: text = text.split("```", 1)[1].split("```")[0].strip()
-                    parsed = json.loads(text)
-                    parsed["html"] = sanitize_llm_output(parsed["html"], url)
-                    return parsed
-            except Exception as e:
-                print(f"Gemini API ({model_name}) article error: {e}")
 
     # 3. Groq API
     groq_key = os.environ.get("GROQ_API_KEY")
@@ -557,14 +582,28 @@ def generate_room_comment_with_llm(item):
     # 1. Gemini API（最優先。thinking無効化・全parts結合で安定化）
     gemini_key = os.environ.get("GEMINI_API_KEY")
     if gemini_key:
-        for model_name in ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"]:
+        models = [
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.0-flash-lite",
+            "gemini-3.7-flash",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-3-flash",
+            "gemini-2.5-pro",
+            "gemini-3.1-pro"
+        ]
+        for model_name in models:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
                 payload = {
                     "contents": [{"parts": [{"text": f"{system_message}\n\n{prompt}"}]}],
                     "generationConfig": {"temperature": 0.9, "maxOutputTokens": 600}
                 }
-                if "2.5" in model_name:
+                if any(v in model_name for v in ["2.5", "3.", "3-"]):
                     payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
                 res = requests.post(url, json=payload, timeout=30)
                 if res.status_code == 200:
