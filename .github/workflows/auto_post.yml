@@ -1,7 +1,8 @@
 name: Auto Post to Blogger
 on:
   schedule:
-    - cron: '0 */3 * * *'
+    # 30分おき (毎時6分、36分) に実行 (GitHub Actions混雑回避のためオフセット設定)
+    - cron: '6,36 * * * *'
   workflow_dispatch:
 permissions:
   contents: write
