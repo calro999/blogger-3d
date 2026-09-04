@@ -407,3 +407,4 @@ s4gshop:10057528
 primeplus:10072632
 led-ecosenmon:10041594
 select-labo:10000297
+akindo:10192794
