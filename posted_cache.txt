@@ -410,3 +410,4 @@ select-labo:10000297
 akindo:10192794
 s4gshop:10057530
 primeplus:10099130
+asahi-abe:10139065
