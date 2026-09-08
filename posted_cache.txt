@@ -422,3 +422,4 @@ rs-product:10001261
 uxcelljapan:10889700
 s4gshop:10057525
 observations:10007650
+hakuei2:10042542
