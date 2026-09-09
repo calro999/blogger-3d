@@ -426,3 +426,4 @@ hakuei2:10042542
 uxcelljapan:10404364
 ideabike:10000478
 mitashop:10030735
+ayard:10002685
