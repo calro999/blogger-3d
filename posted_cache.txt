@@ -447,3 +447,4 @@ observations:10013323
 uxcelljapan:11360149
 uxcelljapan:11559620
 mitashop:10028511
+sotenco:12281293
