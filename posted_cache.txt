@@ -459,3 +459,4 @@ whitewings:10197724
 elegoo:10000052
 uxcelljapan:10888710
 goodtimestore:10007180
+sotenco:12083241
