@@ -500,3 +500,4 @@ jmei:10050735
 ideabike:10000476
 elegoo:10000008
 primeplus:10059913
+e-connect:10532772
