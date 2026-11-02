@@ -504,3 +504,4 @@ e-connect:10532772
 everydayshop:10342941
 observations:10007103
 jmei:10056428
+elegoo:10000034
