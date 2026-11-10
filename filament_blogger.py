@@ -1,4 +1,15 @@
 import os
+import sys
+import re
+import random
+import requests
+import time
+import base64
+import json
+import tempfile
+import difflib
+from playwright.sync_api import sync_playwright
+
 if os.path.exists(".env"):
     with open(".env", "r", encoding="utf-8") as f:
         for line in f:
@@ -100,36 +111,6 @@ def save_recent_theme(theme_name):
     with open(RECENT_THEMES_FILE, "a", encoding="utf-8") as f:
         f.write(f"{theme_name.strip()}\n")
 
-def extract_image_url(item):
-    """楽天APIレスポンスから高画質かつ有効な画像URLを抽出"""
-    if not item:
-        return ""
-    raw_url = ""
-    for key in ["mediumImageUrls", "smallImageUrls"]:
-        imgs = item.get(key, [])
-        if imgs and isinstance(imgs, list):
-            first = imgs[0]
-            if isinstance(first, dict):
-                raw_url = first.get("imageUrl", "") or first.get("url", "")
-            elif isinstance(first, str):
-                raw_url = first
-            if raw_url:
-                break
-    if not raw_url:
-        raw_url = item.get("imageUrl") or ""
-
-    if raw_url:
-        if raw_url.startswith("//"):
-            raw_url = "https:" + raw_url
-        elif raw_url.startswith("http://"):
-            raw_url = "https://" + raw_url[7:]
-        # クエリパラメータ（?_ex=... 等のリサイズ縮小）を除去しオリジナル高解像度URLにする
-        if "?" in raw_url:
-            raw_url = raw_url.split("?")[0]
-    return raw_url
-
-
-
 def click_physical(page, selector):
     import time
     elements = page.locator(selector).all()
@@ -170,6 +151,33 @@ def get_rakuten_affiliate_url(item, affiliate_id):
         return f"https://hb.afl.rakuten.co.jp/hgc/{affiliate_id}/?pc={encoded_item_url}&m={encoded_item_url}"
     
     return item_url
+
+def extract_image_url(item):
+    """楽天APIレスポンスから高画質かつ有効な画像URLを抽出"""
+    if not item:
+        return ""
+    raw_url = ""
+    for key in ["mediumImageUrls", "smallImageUrls"]:
+        imgs = item.get(key, [])
+        if imgs and isinstance(imgs, list):
+            first = imgs[0]
+            if isinstance(first, dict):
+                raw_url = first.get("imageUrl", "") or first.get("url", "")
+            elif isinstance(first, str):
+                raw_url = first
+            if raw_url:
+                break
+    if not raw_url:
+        raw_url = item.get("imageUrl") or ""
+
+    if raw_url:
+        if raw_url.startswith("//"):
+            raw_url = "https:" + raw_url
+        elif raw_url.startswith("http://"):
+            raw_url = "https://" + raw_url[7:]
+        if "_ex=" in raw_url:
+            raw_url = re.sub(r'_ex=[0-9]+x[0-9]+', '_ex=500x500', raw_url)
+    return raw_url
 
 def sanitize_llm_output(content, valid_affiliate_url):
     if not content:
@@ -320,7 +328,7 @@ def fetch_rakuten_item():
         params = {
             "applicationId": app_id,
             "accessKey": access_key,
-            "keyword": f"{cfg['keywords'][0].split()[0]} {b_kw}",
+            "keyword": f"3Dプリンター {b_kw}",
             "format": "json",
             "hits": 30
         }
@@ -341,7 +349,10 @@ def fetch_rakuten_item():
     raise RuntimeError("Could not find any unposted items across all keyword pools.")
 
 def generate_article_with_llm(item):
-    title = item.get("itemName", "")
+    raw_title = item.get("itemName", "")
+    title = clean_rakuten_item_name(raw_title)
+    clean_title = title
+    clean_title = title
     price = item.get("itemPrice", "")
     affiliate_id = os.environ.get("RAKUTEN_AFFILIATE_ID")
     url = get_rakuten_affiliate_url(item, affiliate_id)
@@ -430,15 +441,15 @@ Google検索・読者双方から最高品質の一次情報レビューとし�
     if gemini_key:
         models = [
             "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-pro",
-            "gemini-3-flash",
-            "gemini-3.1-pro",
             "gemini-3.1-flash-lite",
-            "gemini-3.5-flash-lite",
             "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
             "gemini-3.6-flash",
-            "gemini-3.7-flash"
+            "gemini-3.7-flash",
+            "gemini-3.8-flash",
+            "gemini-3-flash-preview",
+            "gemini-3.1-pro-preview",
+            "gemini-flash-latest"
         ]
         for model_name in models:
             try:
@@ -843,15 +854,15 @@ def generate_room_comment_with_llm(item):
     if gemini_key:
         models = [
             "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-pro",
-            "gemini-3-flash",
-            "gemini-3.1-pro",
             "gemini-3.1-flash-lite",
-            "gemini-3.5-flash-lite",
             "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
             "gemini-3.6-flash",
-            "gemini-3.7-flash"
+            "gemini-3.7-flash",
+            "gemini-3.8-flash",
+            "gemini-3-flash-preview",
+            "gemini-3.1-pro-preview",
+            "gemini-flash-latest"
         ]
         for model_name in models:
             try:
