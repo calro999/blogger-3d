@@ -154,6 +154,72 @@ def click_physical(page, selector):
             pass
     return False
 
+def clean_rakuten_item_name(name):
+    """
+    楽天の長文SEOキーワード、クーポン、宣伝文句、容量表記を完全消去し、
+    読者が一目で理解できる自然で洗練された商品名（12〜20文字程度）へクレンジング
+    """
+    if not name:
+        return "実力派メンズケアアイテム"
+        
+    cleaned = name
+    # 括弧とその中身を全除去（【楽天1位】、【送料無料】、【SPF50+】など）
+    cleaned = re.sub(r'【[^】]*】', ' ', cleaned)
+    cleaned = re.sub(r'\[[^\]]*\]', ' ', cleaned)
+    cleaned = re.sub(r'（[^）]*）', ' ', cleaned)
+    cleaned = re.sub(r'\([^\)]*\)', ' ', cleaned)
+    cleaned = re.sub(r'「[^」]*」', ' ', cleaned)
+    cleaned = re.sub(r'『[^』]*』', ' ', cleaned)
+    
+    # 楽天の常套句・スペック・宣伝文句を徹底消去
+    noise_patterns = [
+        r'クーポン(?:で|\s*利用で|\s*配布中|\s*対象)?\s*[0-9,]+円?(?:OFF|off)?',
+        r'P[0-9]+倍', r'ポイント[0-9]+倍', r'送料無料', r'即納', r'あす楽',
+        r'マラソン(?:限定)?', r'スーパーセール', r'お買い物マラソン',
+        r'楽天(?:1位|ランキング1位|デイリー1位)',
+        r'[0-9]+%OFF', r'[0-9]+％OFF', r'★[0-9\.]+★?',
+        r'レビュー(?:特典|プレゼント|高評価)', r'公式(?:店|ショップ)?',
+        r'医薬部外品', r'正規品', r'日本製', r'国内製造', r'男女兼用', r'レディース',
+        r'ギフト', r'プレゼント', r'贈り物', r'父の日', r'母の日', r'バレンタイン',
+        r'お試し', r'サンプル', r'詰替(?:え|用)?', r'大容量', r'限定',
+        r'SPF\s*[0-9]+\+*', r'PA\s*\++',
+        r'ウォータープルーフ', r'ノンケミカル', r'ノンシリコン', r'オーガニック'
+    ]
+    for pat in noise_patterns:
+        cleaned = re.sub(pat, ' ', cleaned, flags=re.IGNORECASE)
+        
+    cleaned = re.sub(r'[＼／★◆■●▼▲〜～!！?？|｜:：;；+＋_＿]+', ' ', cleaned)
+    
+    # 一般的な宣伝・検索用キーワードの除外
+    banned_words = {
+        "メンズ", "男性", "男", "用", "向け", "おすすめ", "人気", "スキンケア", "コスメ",
+        "セット", "対策", "予防", "ケア", "グッズ", "アイテム", "市販", "ランキング",
+        "メール便", "定形外", "ネコポス", "小型宅配便", "宅配便", "あす楽対応", "ゴルフ",
+        "用に", "水に強い", "自然な肌色", "テカリ防止", "日焼止めクリーム", "日焼け止め"
+    }
+    
+    words = []
+    for w in cleaned.split():
+        w_clean = w.strip()
+        if len(w_clean) <= 1:
+            continue
+        if w_clean in banned_words:
+            continue
+        # 数字＋単位（100g, 150ml, 30gなど）や型番（TLU-001など）を除外
+        if re.match(r'^[0-9]+(?:g|ml|mL|本|個|枚|回分|点|点セット)$', w_clean, re.IGNORECASE):
+            continue
+        if re.match(r'^[A-Z0-9\-]{4,}$', w_clean):
+            continue
+        words.append(w_clean)
+        
+    # ブランド名＋商品名のスッキリした組み合わせを構成
+    res = " ".join(words[:4]).strip()
+    if len(res) > 22:
+        res = res[:22].strip()
+    return res if res else "注目ケアアイテム"
+
+
+
 def load_posted_cache():
     if os.path.exists(CACHE_FILE):
         with open(CACHE_FILE, "r", encoding="utf-8") as f:
